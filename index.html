@@ -55,46 +55,41 @@
   </footer>
 
   <script>
-    // ===== CONFIG: ajuste se trocar usuário ou quiser outra pasta =====
-    const USER   = "Rovsalvador";                       // Seu usuário (R maiúsculo)
-    const REPO   = "Rovsalvador.github.io";             // Este repositório
-    const PAGES_BASE = `https://${USER}.github.io/`;    // Domínio do Pages
-    const FOLDERS = ["", "pdfs/"];                      // onde buscar PDFs
-    // ================================================================
+    // ===== CONFIG para SUBSITE /FDS =====
+    const USER   = "Rovsalvador";
+    const REPO   = "FDS";
+    const PAGES_BASE = `https://${USER}.github.io/${REPO}/`; // links abrem em /FDS/
+    const FOLDERS = ["", "pdfs/"]; // raiz e /pdfs
+    // ====================================
 
-    const statusEl = document.getElementById("status");
     document.getElementById("updated").textContent = new Date().toLocaleDateString("pt-BR");
+    const statusEl = document.getElementById("status");
     const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
 
-    // tenta main, se falhar tenta master
     async function fetchContents(folder, branch){
       const url = `https://api.github.com/repos/${USER}/${REPO}/contents/${folder}?ref=${encodeURIComponent(branch)}`;
       const r = await fetch(url, { headers: { "Accept": "application/vnd.github+json" } });
       if (!r.ok) throw new Error(`HTTP ${r.status} em ${url}`);
       return r.json();
     }
-
     async function listFolder(folder){
       for (const branch of ["main", "master"]) {
         try {
           const items = await fetchContents(folder, branch);
           return items
             .filter(x => x.type === "file" && /\.pdf$/i.test(x.name))
-            .map(x => ({ path: folder + x.name, branch }));
-        } catch (_) { /* tenta próxima branch */ }
+            .map(x => folder + x.name);
+        } catch (_) {}
       }
       return [];
     }
-
     function pagesHref(path){
       const enc = path.split("/").map(encodeURIComponent).join("/");
       return PAGES_BASE + enc;
     }
-
     function niceTitle(name){
       return name.replace(/\.pdf$/i, "").replace(/^(FDS|FISPQ)\s*/i, "").trim();
     }
-
     function cardLi(path){
       const name = path.split("/").pop();
       const li = document.createElement("li");
@@ -108,50 +103,40 @@
     }
 
     async function load(){
-      try{
-        statusEl.textContent = "Carregando…";
-        const lists = (await Promise.all(FOLDERS.map(listFolder))).flat();
-        // dedup por nome/caminho (case-insensitive)
-        const seen = new Set();
-        const all = [];
-        for (const it of lists) {
-          const key = it.path.toLowerCase();
-          if (!seen.has(key)) { seen.add(key); all.push(it.path); }
-        }
+      statusEl.textContent = "Carregando…";
+      const lists = (await Promise.all(FOLDERS.map(listFolder))).flat();
+      // dedup
+      const seen = new Set(), all = [];
+      for (const p of lists){ const k = p.toLowerCase(); if(!seen.has(k)){ seen.add(k); all.push(p); } }
 
-        if (!all.length){
-          statusEl.textContent = "Nenhum PDF encontrado (raiz nem /pdfs). Envie seus PDFs e recarregue.";
-          return;
-        }
-
-        const fds    = all.filter(p => /^FDS\b/i.test(p.split("/").pop())).sort(collator.compare);
-        const fispq  = all.filter(p => /^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
-        const outros = all.filter(p => !/^FDS\b/i.test(p.split("/").pop()) && !/^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
-
-        const elFds = document.getElementById("lista-fds");
-        const elFispq = document.getElementById("lista-fispq");
-        const elOutros = document.getElementById("lista-outros");
-        const secOutros = document.getElementById("sec-outros");
-
-        fds.forEach(p => elFds.appendChild(cardLi(p)));
-        fispq.forEach(p => elFispq.appendChild(cardLi(p)));
-        if (outros.length) {
-          secOutros.style.display = "";
-          outros.forEach(p => elOutros.appendChild(cardLi(p)));
-        }
-
-        document.getElementById("count-fds").textContent   = `(${fds.length})`;
-        document.getElementById("count-fispq").textContent = `(${fispq.length})`;
-        if (outros.length) document.getElementById("count-outros").textContent = `(${outros.length})`;
-
-        statusEl.textContent = "";
-      } catch (e){
-        statusEl.textContent = "Erro ao carregar lista. Verifique nome do repositório, branch e pastas.";
-        console.error(e);
+      if (!all.length){
+        statusEl.textContent = "Nenhum PDF encontrado (coloque na raiz ou em /pdfs).";
+        return;
       }
+
+      const fds    = all.filter(p => /^FDS\b/i.test(p.split("/").pop())).sort(collator.compare);
+      const fispq  = all.filter(p => /^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
+      const outros = all.filter(p => !/^FDS\b/i.test(p.split("/").pop()) && !/^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
+
+      const elFds = document.getElementById("lista-fds");
+      const elFispq = document.getElementById("lista-fispq");
+      const elOutros = document.getElementById("lista-outros");
+      const secOutros = document.getElementById("sec-outros");
+
+      fds.forEach(p => elFds.appendChild(cardLi(p)));
+      fispq.forEach(p => elFispq.appendChild(cardLi(p)));
+      if (outros.length) {
+        secOutros.style.display = "";
+        outros.forEach(p => elOutros.appendChild(cardLi(p)));
+      }
+
+      document.getElementById("count-fds").textContent   = `(${fds.length})`;
+      document.getElementById("count-fispq").textContent = `(${fispq.length})`;
+      if (outros.length) document.getElementById("count-outros").textContent = `(${outros.length})`;
+
+      statusEl.textContent = "";
     }
 
-    // busca
     document.getElementById("search").addEventListener("input", (ev) => {
       const q = ev.target.value.toLowerCase().trim();
       document.querySelectorAll(".card").forEach(card => {
