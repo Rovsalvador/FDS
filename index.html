@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Biblioteca de Fichas de Segurança</title>
+  <meta name="description" content="Lista automática de PDFs (FDS, FISPQ e outros)">
+  <style>
+    :root { --gap:1rem; --radius:16px; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5}
+    .container{max-width:1000px;margin:0 auto;padding:1.5rem}
+    h1{margin:0 0 .5rem} h2{margin:2rem 0 .5rem}
+    #search{width:100%;padding:.75rem 1rem;border:1px solid #ddd;border-radius:var(--radius);font-size:1rem}
+    .grid{list-style:none;padding:0;margin:var(--gap) 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--gap)}
+    .card a{display:block;padding:1rem;border:1px solid #eee;border-radius:var(--radius);text-decoration:none;color:inherit;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .card a:hover{border-color:#ddd;box-shadow:0 3px 12px rgba(0,0,0,.06)}
+    .title{display:block;font-weight:600;margin-bottom:.25rem}.meta{display:block;font-size:.9rem;color:#666}
+    footer{border-top:1px solid #eee;margin-top:2rem}
+    .muted{color:#777;font-size:.95rem}
+    @media (prefers-color-scheme: dark){
+      body{background:#0b0b0b;color:#eaeaea}
+      #search{background:#161616;border-color:#333;color:#eaeaea}
+      .card a{background:#121212;border-color:#222}
+      .card a:hover{border-color:#2d2d2d;box-shadow:0 3px 14px rgba(0,0,0,.35)}
+      footer{border-color:#1f1f1f}
+      .muted{color:#a0a0a0}
+    }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <h1>📚 Fichas de Dados de Segurança</h1>
+    <p class="muted">Adicione/exclua PDFs pela interface do GitHub — a lista atualiza sozinha.</p>
+    <input id="search" type="search" placeholder="Pesquisar… (ex.: WD-40, Molykote, Loctite)">
+  </header>
+
+  <main class="container">
+    <section>
+      <h2>FDS <span id="count-fds" class="muted"></span></h2>
+      <ul id="lista-fds" class="grid"></ul>
+    </section>
+    <section>
+      <h2>FISPQ <span id="count-fispq" class="muted"></span></h2>
+      <ul id="lista-fispq" class="grid"></ul>
+    </section>
+    <section id="sec-outros" style="display:none">
+      <h2>Outros <span id="count-outros" class="muted"></span></h2>
+      <ul id="lista-outros" class="grid"></ul>
+    </section>
+    <p id="status" class="muted"></p>
+  </main>
+
+  <footer class="container" style="font-size:.9rem">
+    Última atualização: <span id="updated"></span>
+  </footer>
+
+  <script>
+    // ===== CONFIG: ajuste se trocar usuário ou quiser outra pasta =====
+    const USER   = "Rovsalvador";                       // Seu usuário (R maiúsculo)
+    const REPO   = "Rovsalvador.github.io";             // Este repositório
+    const PAGES_BASE = `https://${USER}.github.io/`;    // Domínio do Pages
+    const FOLDERS = ["", "pdfs/"];                      // onde buscar PDFs
+    // ================================================================
+
+    const statusEl = document.getElementById("status");
+    document.getElementById("updated").textContent = new Date().toLocaleDateString("pt-BR");
+    const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+
+    // tenta main, se falhar tenta master
+    async function fetchContents(folder, branch){
+      const url = `https://api.github.com/repos/${USER}/${REPO}/contents/${folder}?ref=${encodeURIComponent(branch)}`;
+      const r = await fetch(url, { headers: { "Accept": "application/vnd.github+json" } });
+      if (!r.ok) throw new Error(`HTTP ${r.status} em ${url}`);
+      return r.json();
+    }
+
+    async function listFolder(folder){
+      for (const branch of ["main", "master"]) {
+        try {
+          const items = await fetchContents(folder, branch);
+          return items
+            .filter(x => x.type === "file" && /\.pdf$/i.test(x.name))
+            .map(x => ({ path: folder + x.name, branch }));
+        } catch (_) { /* tenta próxima branch */ }
+      }
+      return [];
+    }
+
+    function pagesHref(path){
+      const enc = path.split("/").map(encodeURIComponent).join("/");
+      return PAGES_BASE + enc;
+    }
+
+    function niceTitle(name){
+      return name.replace(/\.pdf$/i, "").replace(/^(FDS|FISPQ)\s*/i, "").trim();
+    }
+
+    function cardLi(path){
+      const name = path.split("/").pop();
+      const li = document.createElement("li");
+      li.className = "card";
+      li.innerHTML = `
+        <a href="${pagesHref(path)}" target="_blank" rel="noopener">
+          <span class="title">${niceTitle(name)}</span>
+          <span class="meta">PDF</span>
+        </a>`;
+      return li;
+    }
+
+    async function load(){
+      try{
+        statusEl.textContent = "Carregando…";
+        const lists = (await Promise.all(FOLDERS.map(listFolder))).flat();
+        // dedup por nome/caminho (case-insensitive)
+        const seen = new Set();
+        const all = [];
+        for (const it of lists) {
+          const key = it.path.toLowerCase();
+          if (!seen.has(key)) { seen.add(key); all.push(it.path); }
+        }
+
+        if (!all.length){
+          statusEl.textContent = "Nenhum PDF encontrado (raiz nem /pdfs). Envie seus PDFs e recarregue.";
+          return;
+        }
+
+        const fds    = all.filter(p => /^FDS\b/i.test(p.split("/").pop())).sort(collator.compare);
+        const fispq  = all.filter(p => /^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
+        const outros = all.filter(p => !/^FDS\b/i.test(p.split("/").pop()) && !/^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
+
+        const elFds = document.getElementById("lista-fds");
+        const elFispq = document.getElementById("lista-fispq");
+        const elOutros = document.getElementById("lista-outros");
+        const secOutros = document.getElementById("sec-outros");
+
+        fds.forEach(p => elFds.appendChild(cardLi(p)));
+        fispq.forEach(p => elFispq.appendChild(cardLi(p)));
+        if (outros.length) {
+          secOutros.style.display = "";
+          outros.forEach(p => elOutros.appendChild(cardLi(p)));
+        }
+
+        document.getElementById("count-fds").textContent   = `(${fds.length})`;
+        document.getElementById("count-fispq").textContent = `(${fispq.length})`;
+        if (outros.length) document.getElementById("count-outros").textContent = `(${outros.length})`;
+
+        statusEl.textContent = "";
+      } catch (e){
+        statusEl.textContent = "Erro ao carregar lista. Verifique nome do repositório, branch e pastas.";
+        console.error(e);
+      }
+    }
+
+    // busca
+    document.getElementById("search").addEventListener("input", (ev) => {
+      const q = ev.target.value.toLowerCase().trim();
+      document.querySelectorAll(".card").forEach(card => {
+        card.style.display = card.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+
+    load();
+  </script>
+</body>
+</html>
