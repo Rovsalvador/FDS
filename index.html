@@ -7,7 +7,8 @@
   <meta name="description" content="Lista automática de PDFs (FDS, FISPQ e outros)">
   <style>
     :root { --gap:1rem; --radius:16px; }
-    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5}
     .container{max-width:1000px;margin:0 auto;padding:1.5rem}
     h1{margin:0 0 .5rem} h2{margin:2rem 0 .5rem}
     #search{width:100%;padding:.75rem 1rem;border:1px solid #ddd;border-radius:var(--radius);font-size:1rem}
@@ -30,7 +31,7 @@
 <body>
   <header class="container">
     <h1>📚 Fichas de Dados de Segurança</h1>
-    <p class="muted">Adicione/exclua PDFs pela interface do GitHub — a lista atualiza sozinha.</p>
+    <p class="muted">Adicione/exclua PDFs no repositório — a lista atualiza automaticamente.</p>
     <input id="search" type="search" placeholder="Pesquisar… (ex.: WD-40, Molykote, Loctite)">
   </header>
 
@@ -55,16 +56,13 @@
   </footer>
 
   <script>
-    // ===== CONFIG para SUBSITE /FDS =====
     const USER   = "Rovsalvador";
     const REPO   = "FDS";
-    const PAGES_BASE = `https://${USER}.github.io/${REPO}/`; // links abrem em /FDS/
-    const FOLDERS = ["", "pdfs/"]; // raiz e /pdfs
-    // ====================================
+    const PAGES_BASE = `https://${USER}.github.io/${REPO}/`;
+    const FOLDERS = ["", "pdfs/"];
 
     document.getElementById("updated").textContent = new Date().toLocaleDateString("pt-BR");
     const statusEl = document.getElementById("status");
-    const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
 
     async function fetchContents(folder, branch){
       const url = `https://api.github.com/repos/${USER}/${REPO}/contents/${folder}?ref=${encodeURIComponent(branch)}`;
@@ -88,7 +86,7 @@
       return PAGES_BASE + enc;
     }
     function niceTitle(name){
-      return name.replace(/\.pdf$/i, "").replace(/^(FDS|FISPQ)\s*/i, "").trim();
+      return name.replace(/\.pdf$/i, "").trim();
     }
     function cardLi(path){
       const name = path.split("/").pop();
@@ -102,10 +100,21 @@
       return li;
     }
 
+    function categorizeFiles(all) {
+      const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+
+      const fds    = all.filter(p => p.toUpperCase().includes("FDS")).sort(collator.compare);
+      const fispq  = all.filter(p => p.toUpperCase().includes("FISPQ")).sort(collator.compare);
+      const outros = all.filter(
+        p => !p.toUpperCase().includes("FDS") && !p.toUpperCase().includes("FISPQ")
+      ).sort(collator.compare);
+
+      return { fds, fispq, outros };
+    }
+
     async function load(){
       statusEl.textContent = "Carregando…";
       const lists = (await Promise.all(FOLDERS.map(listFolder))).flat();
-      // dedup
       const seen = new Set(), all = [];
       for (const p of lists){ const k = p.toLowerCase(); if(!seen.has(k)){ seen.add(k); all.push(p); } }
 
@@ -114,9 +123,7 @@
         return;
       }
 
-      const fds    = all.filter(p => /^FDS\b/i.test(p.split("/").pop())).sort(collator.compare);
-      const fispq  = all.filter(p => /^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
-      const outros = all.filter(p => !/^FDS\b/i.test(p.split("/").pop()) && !/^FISPQ\b/i.test(p.split("/").pop())).sort(collator.compare);
+      const { fds, fispq, outros } = categorizeFiles(all);
 
       const elFds = document.getElementById("lista-fds");
       const elFispq = document.getElementById("lista-fispq");
